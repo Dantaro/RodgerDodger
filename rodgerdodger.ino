@@ -13,16 +13,32 @@ Sprite *hero;
 
 //Enemy-related variables
 Sprite *enemies[30]; //Max of 30  enemies on screen
-bool death;
+short activeEnemyNumber = arr_length(enemies); //Default to max size
 
 //Scoring
 int score;
-bool victory;
-int frameCount;
+int unsigned frameCount;
+int lastScoreMilestone;
 
-//Initial Game State
-bool splashScreenCheck = true;
-bool menuScreenCheck = false;
+//Game State
+short gameState = 0;
+/*
+ * 0 - Splash Screen
+ * 1 - Instruction Screen
+ * 2 - Game Selection Menu
+ * 3 - RESERVED (Options)
+ * 4 - RESERVED
+ * 5 - RESERVED
+ * 6 - Playing game
+ * 7 - Death
+ * 8 - Victory
+ */
+char gameMode = 1;
+/*
+ * 0 - Classic
+ * 1 - Infinite Runner
+ * 2 - Classic Inifinite Runner
+ */
 
 void setup() {
   //initiate arduboy instance
@@ -48,20 +64,28 @@ void loop() {
     
   arduboy.clear();
 
-  if (splashScreenCheck) {
+  if (gameState == 0) {
     splashScreen();
-  } else if (menuScreenCheck) {
+  } else if (gameState == 1) {
       menuScreen();
+  } else if (gameState == 2) {
+    gameModeMenu();
   } else {
-    if (!victory && !death) {
+    if (gameState == 6) {
       int enemiesLength = arr_length(enemies);
       operateHero();
-      operateEnemies(enemiesLength);
-      calculateCollisions(enemiesLength);
+      operateEnemies();
+      if (gameMode == 1) {
+        calculateActiveEnemyNumber();
+      }
+      calculateCollisions();
       calculateAndDrawScore();
-    } else if (victory) {
+      if (gameMode == 0) {
+        checkForVictory();
+      }
+    } else if (gameState == 8) {
       victoryState();
-    } else if (death) {
+    } else if (gameState == 7) {
       deathState();
     }
   }
@@ -91,10 +115,15 @@ void setInitialGameState() {
     enemies[i] = enemy;
   }
   
-  death = false;
   score = 0;
-  victory = false;
   frameCount = 0;
+  lastScoreMilestone = 0;
+
+  if (gameMode == 1) {
+    activeEnemyNumber = 1;
+  } else {
+    activeEnemyNumber = arr_length(enemies);
+  }
 }
 
 void operateHero() {
@@ -117,10 +146,10 @@ void operateHero() {
       arduboy.print(hero->getCharacterSprite());
 }
 
-void operateEnemies(int enemiesLength) {
+void operateEnemies() {
   //Move Enemies
   bool hasMadeVisibleThisCycle = false;
-  for (int i = 0 ; i < arr_length(enemies) ; i++) {
+  for (int i = 0 ; i < activeEnemyNumber ; i++) {
     Sprite *enemy = enemies[i];
     if (enemy->isVisible()) {
       int y = enemy->getY();
@@ -147,9 +176,9 @@ void operateEnemies(int enemiesLength) {
   }
 }
 
-void calculateCollisions(int enemiesLength) {
+void calculateCollisions() {
   //Calculate collision
-  for (int i = 0 ; i < enemiesLength ; i++) {
+  for (int i = 0 ; i < activeEnemyNumber ; i++) {
     Sprite *enemy = enemies[i];
     
     //Left Corner
@@ -194,14 +223,19 @@ void calculateCollisions(int enemiesLength) {
 
     //Calculate if hit
     if ((hitXRightMin && hitXRightMax) && ((hitYTopMin && hitYTopMax) || (hitYBottomMin && hitYBottomMax))) {
-      death = true;
+      gameState = 7;
       break;
     } else if ((hitXLeftMin && hitXLeftMax) && ((hitYTopMin && hitYTopMax) || (hitYBottomMin && hitYBottomMax))) {
-      death = true;
+      gameState = 7;
       break;
-    } else {
-      death = false;
     }
+  }
+}
+
+void calculateActiveEnemyNumber() {
+  if (lastScoreMilestone + 50 == score && activeEnemyNumber < arr_length(enemies)) {
+    lastScoreMilestone = score;
+    activeEnemyNumber++;
   }
 }
 
@@ -211,11 +245,14 @@ void calculateAndDrawScore() {
   if (frameCount % 10 == 0) {
     score++;
   }
-  if (score >= VICTORY_SCORE) {
-    victory = true;
-  }
   arduboy.setCursor(0,0);
   arduboy.print(score);
+}
+
+void checkForVictory() {
+  if (score >= VICTORY_SCORE) {
+    gameState = 8;
+  }
 }
 
 void victoryState() {
@@ -226,11 +263,12 @@ void victoryState() {
   arduboy.print(playText);
   arduboy.setCursor((CENTER_X - (sizeof(finalScoreText) * CHAR_WIDTH / 2)), CENTER_Y - (CHAR_HEIGHT * 2) - 6);
   arduboy.print(finalScoreText);
-  arduboy.setCursor((CENTER_X - (CHAR_WIDTH * 2)), CENTER_Y - (CHAR_HEIGHT * 2) - 3);
+  arduboy.setCursor((CENTER_X - (CHAR_WIDTH * 2)), CENTER_Y - (CHAR_HEIGHT) - 3);
   arduboy.print(score);
   if (arduboy.pressed(A_BUTTON) || arduboy.pressed(B_BUTTON)) {
-    victory = false;
+    gameState = 2;
     setInitialGameState();
+    delay(250);
   }
 }
 
@@ -245,8 +283,9 @@ void deathState() {
   arduboy.setCursor((CENTER_X - (CHAR_WIDTH * 2)), CENTER_Y - (CHAR_HEIGHT) - 3);
   arduboy.print(score);
   if (arduboy.pressed(A_BUTTON) || arduboy.pressed(B_BUTTON)) {
-    death = false;
+     gameState = 2;
     setInitialGameState();
+    delay(250);
   }
 }
 
@@ -260,8 +299,7 @@ void splashScreen() {
   || arduboy.pressed(DOWN_BUTTON)
   || arduboy.pressed(RIGHT_BUTTON)
   || arduboy.pressed(LEFT_BUTTON)){
-    splashScreenCheck = false;
-    menuScreenCheck = true;
+    gameState = 1;
     delay(250);
   }
 }
@@ -282,8 +320,57 @@ void menuScreen() {
   arduboy.setCursor(0, Y_MAX);
   arduboy.print(playText);
   if (arduboy.pressed(A_BUTTON)) {
-    splashScreenCheck = false;
-    menuScreenCheck = false;
+    gameState = 2;
+    delay(250);
   }
+}
+
+void gameModeMenu() {
+  char pointer = 175;
+  char pointerLocation = 0;
+  while(true) {
+    arduboy.clear();
+
+    int textY = 10;
+    arduboy.setCursor(0, textY);
+    arduboy.print("Choose mode");
+    textY = textY + 12;
+    if (pointerLocation == 0) {
+      arduboy.setCursor(0, textY);
+      arduboy.print(pointer);
+    }
+    arduboy.setCursor(6, textY);
+    arduboy.print("Classic RodgerDodger");
+    textY = textY + CHAR_HEIGHT + 3;
+    if (pointerLocation == 1) {
+      arduboy.setCursor(0, textY);
+      arduboy.print(pointer);
+    }
+    arduboy.setCursor(6, textY);
+    arduboy.print("Endless RodgerDodger");
+    
+    if (arduboy.pressed(A_BUTTON)) {
+      if (pointerLocation == 0) {
+        gameMode = 0;
+      } else if (pointerLocation == 1) {
+        gameMode = 1;
+      }
+      gameState = 6;
+      setInitialGameState();
+      break;
+    } else if (arduboy.pressed(DOWN_BUTTON) || arduboy.pressed(UP_BUTTON)) {
+      if (pointerLocation == 0) {
+        pointerLocation = 1;
+      } else if (pointerLocation == 1) {
+        pointerLocation = 0;
+      }
+      delay(150);
+    }
+     arduboy.display();
+  }
+
+  pointer = NULL;
+  pointerLocation = NULL;
+  
 }
 
